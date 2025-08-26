@@ -47,6 +47,7 @@ export const createChildAccount = async (
     role: "child",
     familyId,
     walletAddress: null,
+    tokenMintAddress: null, // <-- add this
     createdAt: new Date(),
   });
 
@@ -56,6 +57,21 @@ export const createChildAccount = async (
 
   return cred.user.uid;
 };
+
+export const updateChild = (childId: string, updates: any) =>
+  updateDoc(doc(db, "users", childId), updates);
+
+//
+// ✏️ Update Child's Token Mint Address
+//
+export const updateChildTokenMintAddress = async (
+  childId: string,
+  tokenMintAddress: string
+) => {
+  const ref = doc(db, "users", childId);
+  await updateDoc(ref, { tokenMintAddress });
+};
+
 
 //
 // ✅ Chores
@@ -208,6 +224,7 @@ export const addChild = async (familyId: string, name: string) => {
     role: "child",
     name,
     email: `${name.toLowerCase()}@demo.local`,
+    tokenMintAddress: null, // <-- add this
     createdAt: new Date(),
   });
 

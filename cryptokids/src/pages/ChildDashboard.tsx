@@ -6,7 +6,13 @@ import {
   listenToStoreItems, redeemStoreItem,
   listenToTransactions
 } from "../services/firestoreService";
-import { connectPhantom, getPhantomBalance } from "../services/phantomService";
+import {
+  connectPhantom,
+  getPhantomBalance,
+  getSPLTokenBalance
+} from "../services/phantomService";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../services/firebase";
 
 const ChildDashboard: React.FC = () => {
   const { user } = useAuth();
@@ -17,7 +23,10 @@ const ChildDashboard: React.FC = () => {
   const [balance, setBalance] = useState<number>(0);
   const [storeItems, setStoreItems] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [phantomPubkey, setPhantomPubkey] = useState<string | null>(null);
   const [phantomBalance, setPhantomBalance] = useState<number | null>(null);
+  const [splTokenBalance, setSplTokenBalance] = useState<number | null>(null);
+  const [tokenMintAddress, setTokenMintAddress] = useState<string | null>(null);
 
   // Subscriptions
   useEffect(() => {
@@ -29,6 +38,18 @@ const ChildDashboard: React.FC = () => {
       const unsubItems = listenToStoreItems(familyId, setStoreItems);
       const unsubTx = listenToTransactions(familyId, userId, setTransactions);
 
+      // Fetch user's tokenMintAddress
+      const fetchUser = async () => {
+        const ref = doc(db, "users", userId);
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          const data = snap.data();
+          setTokenMintAddress(data.tokenMintAddress || null);
+        }
+      };
+
+      fetchUser();
+
       return () => {
         unsubChores();
         unsubBal();
@@ -38,7 +59,6 @@ const ChildDashboard: React.FC = () => {
     }
   }, [familyId, userId]);
 
-  // Handlers
   const handleCompleteChore = async (choreId: string) => {
     await updateChore(choreId, { status: "completed" });
   };
@@ -53,8 +73,16 @@ const ChildDashboard: React.FC = () => {
     try {
       const pubkey = await connectPhantom();
       if (pubkey) {
-        const bal = await getPhantomBalance(pubkey);
-        setPhantomBalance(bal);
+        setPhantomPubkey(pubkey);
+        const sol = await getPhantomBalance(pubkey);
+        setPhantomBalance(sol);
+
+        if (tokenMintAddress) {
+          const tokens = await getSPLTokenBalance(pubkey, tokenMintAddress);
+          setSplTokenBalance(tokens);
+        } else {
+          alert("Token Mint Address not set. Ask your parent to assign one.");
+        }
       }
     } catch (err) {
       console.error("Phantom connection failed", err);
@@ -64,16 +92,24 @@ const ChildDashboard: React.FC = () => {
   return (
     <div style={{ padding: "20px" }}>
       <h2>Child Dashboard</h2>
-      <p><b>Your Balance:</b> {balance} tokens</p>
+      <p><b>Your In-App Balance:</b> {balance} tokens</p>
 
-      {/* Optional Phantom balance */}
-      <button onClick={handleConnectPhantom}>Connect Phantom Wallet</button>
-      {phantomBalance !== null && (
-        <p><b>Phantom Balance:</b> {phantomBalance} SOL</p>
-      )}
+      {/* --- Phantom Wallet --- */}
+      <section style={{ marginTop: "30px" }}>
+        <h3>Phantom Wallet</h3>
+        {phantomPubkey ? (
+          <div>
+            <p><b>Connected:</b> {phantomPubkey}</p>
+            <p><b>SOL Balance:</b> {phantomBalance} SOL</p>
+            <p><b>Token Balance:</b> {splTokenBalance ?? "N/A"} {tokenMintAddress ? "" : "(No token assigned)"}</p>
+          </div>
+        ) : (
+          <button onClick={handleConnectPhantom}>Connect Phantom Wallet</button>
+        )}
+      </section>
 
       {/* --- Chores --- */}
-      <section>
+      <section style={{ marginTop: "30px" }}>
         <h3>Your Chores</h3>
         <ul>
           {chores.map((c) => (
@@ -85,7 +121,7 @@ const ChildDashboard: React.FC = () => {
         </ul>
       </section>
 
-      {/* --- Store Items --- */}
+      {/* --- Store --- */}
       <section style={{ marginTop: "30px" }}>
         <h3>Store</h3>
         <ul>
