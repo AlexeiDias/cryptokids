@@ -1,83 +1,55 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged,
-  User
-} from "firebase/auth";
-import { auth, db } from "../services/firebase";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "../services/firebase";
+import { getUserData } from "../services/firestoreService";
 
-interface AuthContextType {
-  user: any;
-  loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, role?: "parent" | "child") => Promise<void>;
-  logout: () => Promise<void>;
+interface User {
+  uid: string;
+  email?: string;
+  name?: string;
+  familyId: string;
+  role: "parent" | "child";
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
+interface AuthContextType {
+  user: User | null;
+  setDevUserId?: (uid: string) => void;
+}
 
-export const useAuth = () => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
-  return ctx;
-};
+const AuthContext = createContext<AuthContextType>({ user: null });
+const DEV_MODE = import.meta.env.DEV;
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
+  const [devUserId, setDevUserId] = useState<string | null>(null);
 
-  // Watch Firebase Auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Fetch profile doc from Firestore
-        const userRef = doc(db, "users", firebaseUser.uid);
-        const userSnap = await getDoc(userRef);
-
-        if (userSnap.exists()) {
-          setUser({ uid: firebaseUser.uid, ...userSnap.data() });
+        const data = await getUserData(firebaseUser.uid);
+        if (data) {
+          setUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email || undefined,
+            ...data,
+          });
         } else {
-          // fallback if Firestore doc missing
-          setUser({ uid: firebaseUser.uid, email: firebaseUser.email });
+          setUser(null);
         }
       } else {
         setUser(null);
       }
-      setLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  // Login
-  const login = async (email: string, password: string) => {
-    await signInWithEmailAndPassword(auth, email, password);
-  };
-
-  // Signup (creates Firestore profile doc)
-  const signup = async (email: string, password: string, role: "parent" | "child" = "parent") => {
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
-
-    // Create Firestore user doc
-    await setDoc(doc(db, "users", cred.user.uid), {
-      uid: cred.user.uid,
-      email,
-      role,
-      familyId: role === "parent" ? cred.user.uid : null, // parent gets own familyId
-      createdAt: new Date(),
-    });
-  };
-
-  // Logout
-  const logout = async () => {
-    await signOut(auth);
-  };
+  const computedUser = DEV_MODE && devUserId ? (user ? { ...user, uid: devUserId } : null) : user;
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout }}>
+    <AuthContext.Provider value={{ user: computedUser, setDevUserId }}>
       {children}
     </AuthContext.Provider>
   );
 };
+
+export const useAuth = () => useContext(AuthContext);

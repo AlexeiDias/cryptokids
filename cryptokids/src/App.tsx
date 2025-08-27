@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
 import Dashboard from "./pages/Dashboard";
 import ChildDashboard from "./pages/ChildDashboard";
@@ -12,42 +12,92 @@ const App: React.FC = () => {
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // 🔁 Dev-only override for testing roles
+  const [overrideRole, setOverrideRole] = useState<string | null>(null);
+
   useEffect(() => {
     const fetchRole = async () => {
-      if (user?.uid) {
-        try {
-          const ref = doc(db, "users", user.uid);
-          const snap = await getDoc(ref);
-          if (snap.exists()) {
-            setRole(snap.data().role); // "parent" or "child"
-          } else {
-            setRole(null);
-          }
-        } catch (err) {
-          console.error("Error fetching role:", err);
+      if (!user?.uid) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const ref = doc(db, "users", user.uid);
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          const data = snap.data();
+          setRole(data.role || null);
+        } else {
+          console.warn("User document not found.");
           setRole(null);
         }
-      } else {
+      } catch (err) {
+        console.error("Error fetching user role:", err);
         setRole(null);
       }
       setLoading(false);
     };
+
     fetchRole();
   }, [user]);
 
   if (loading) return <p>Loading...</p>;
 
+  // 🧠 Use overridden role if in dev
+  const effectiveRole = overrideRole || role;
+
   return (
     <Router>
+      {/* 🛠️ Dev-only role override UI */}
+      {import.meta.env.DEV && user && (
+        <div
+          style={{
+            position: "fixed",
+            top: 10,
+            right: 10,
+            zIndex: 9999,
+            background: "white",
+            border: "1px solid #ccc",
+            padding: "0.5rem",
+            borderRadius: "6px",
+            fontSize: "14px"
+          }}
+        >
+          <label>
+            <strong>Dev Role:</strong>{" "}
+            <select
+              value={overrideRole || role || ""}
+              onChange={(e) =>
+                setOverrideRole(
+                  e.target.value === "none" ? null : e.target.value
+                )
+              }
+            >
+              <option value="none">(default)</option>
+              <option value="parent">Parent</option>
+              <option value="child">Child</option>
+            </select>
+          </label>
+        </div>
+      )}
+
       <Routes>
-        {!user ? (
-          <Route path="*" element={<Login />} />
-        ) : role === "parent" ? (
+        {!user && <Route path="*" element={<Login />} />}
+        {user && effectiveRole === "parent" && (
           <Route path="*" element={<Dashboard />} />
-        ) : role === "child" ? (
+        )}
+        {user && effectiveRole === "child" && (
           <Route path="*" element={<ChildDashboard />} />
-        ) : (
-          <Route path="*" element={<p>No role assigned. Contact admin.</p>} />
+        )}
+        {user && !effectiveRole && (
+          <Route
+            path="*"
+            element={
+              <p>
+                User role not set. Please contact support or an administrator.
+              </p>
+            }
+          />
         )}
       </Routes>
     </Router>

@@ -1,34 +1,36 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import {
-  listenToChores, updateChore,
+  listenToChores,
+  updateChore,
   listenToBalance,
-  listenToStoreItems, redeemStoreItem,
-  listenToTransactions
+  listenToStoreItems,
+  redeemStoreItem,
+  listenToTransactions,
+  listenToChildren
 } from "../services/firestoreService";
-import {
-  connectPhantom,
-  getPhantomBalance,
-  getSPLTokenBalance
-} from "../services/phantomService";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "../services/firebase";
+import { connectPhantom, getSPLTokenBalance } from "../services/phantomService";
+
+const DEV_MODE = import.meta.env.DEV;
 
 const ChildDashboard: React.FC = () => {
-  const { user } = useAuth();
+  const { user, setDevUserId } = useAuth();
   const familyId = user?.familyId;
   const userId = user?.uid;
 
+  const [children, setChildren] = useState<any[]>([]);
   const [chores, setChores] = useState<any[]>([]);
   const [balance, setBalance] = useState<number>(0);
   const [storeItems, setStoreItems] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [phantomPubkey, setPhantomPubkey] = useState<string | null>(null);
   const [phantomBalance, setPhantomBalance] = useState<number | null>(null);
-  const [splTokenBalance, setSplTokenBalance] = useState<number | null>(null);
-  const [tokenMintAddress, setTokenMintAddress] = useState<string | null>(null);
 
-  // Subscriptions
+  useEffect(() => {
+    if (familyId) {
+      return listenToChildren(familyId, setChildren);
+    }
+  }, [familyId]);
+
   useEffect(() => {
     if (familyId && userId) {
       const unsubChores = listenToChores(familyId, (data) =>
@@ -37,18 +39,6 @@ const ChildDashboard: React.FC = () => {
       const unsubBal = listenToBalance(userId, setBalance);
       const unsubItems = listenToStoreItems(familyId, setStoreItems);
       const unsubTx = listenToTransactions(familyId, userId, setTransactions);
-
-      // Fetch user's tokenMintAddress
-      const fetchUser = async () => {
-        const ref = doc(db, "users", userId);
-        const snap = await getDoc(ref);
-        if (snap.exists()) {
-          const data = snap.data();
-          setTokenMintAddress(data.tokenMintAddress || null);
-        }
-      };
-
-      fetchUser();
 
       return () => {
         unsubChores();
@@ -72,77 +62,119 @@ const ChildDashboard: React.FC = () => {
   const handleConnectPhantom = async () => {
     try {
       const pubkey = await connectPhantom();
-      if (pubkey) {
-        setPhantomPubkey(pubkey);
-        const sol = await getPhantomBalance(pubkey);
-        setPhantomBalance(sol);
+      const child = children.find((c) => c.id === user?.uid);
+      const tokenMint = child?.tokenMintAddress;
 
-        if (tokenMintAddress) {
-          const tokens = await getSPLTokenBalance(pubkey, tokenMintAddress);
-          setSplTokenBalance(tokens);
-        } else {
-          alert("Token Mint Address not set. Ask your parent to assign one.");
-        }
+      if (!tokenMint) {
+        alert("No token mint address set for this child.");
+        return;
       }
+
+      const bal = await getSPLTokenBalance(pubkey, tokenMint);
+      setPhantomBalance(bal);
     } catch (err) {
       console.error("Phantom connection failed", err);
     }
   };
 
+  const currentChild = children.find((c) => c.id === user?.uid);
+
   return (
     <div style={{ padding: "20px" }}>
       <h2>Child Dashboard</h2>
-      <p><b>Your In-App Balance:</b> {balance} tokens</p>
 
-      {/* --- Phantom Wallet --- */}
-      <section style={{ marginTop: "30px" }}>
-        <h3>Phantom Wallet</h3>
-        {phantomPubkey ? (
-          <div>
-            <p><b>Connected:</b> {phantomPubkey}</p>
-            <p><b>SOL Balance:</b> {phantomBalance} SOL</p>
-            <p><b>Token Balance:</b> {splTokenBalance ?? "N/A"} {tokenMintAddress ? "" : "(No token assigned)"}</p>
-          </div>
-        ) : (
-          <button onClick={handleConnectPhantom}>Connect Phantom Wallet</button>
-        )}
-      </section>
+      {/* ✅ Logged-in child info */}
+      <p style={{ fontStyle: "italic", color: "#555" }}>
+        Logged in as: {currentChild?.name || user?.email || user?.uid}
+      </p>
 
-      {/* --- Chores --- */}
-      <section style={{ marginTop: "30px" }}>
+      {/* 🔁 DEV MODE: switch child UID */}
+      {DEV_MODE && setDevUserId && (
+        <div style={{ marginBottom: "20px" }}>
+          <label>
+            <b>Switch Child:</b>
+            <select
+              style={{ marginLeft: "10px" }}
+              value={user?.uid}
+              onChange={(e) => setDevUserId(e.target.value)}
+            >
+              <option value="">Select child...</option>
+              {children.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name || "Unnamed"} ({c.id.slice(0, 6)}…)
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
+      <p>
+        <b>Your Balance:</b> {balance} tokens
+      </p>
+
+      {/* Phantom Wallet */}
+      <button onClick={handleConnectPhantom}>Connect Phantom Wallet</button>
+      {phantomBalance !== null && (
+        <p>
+          <b>Phantom Balance:</b> {phantomBalance} SPL tokens
+        </p>
+      )}
+
+      {/* Chores */}
+      <section>
         <h3>Your Chores</h3>
         <ul>
           {chores.map((c) => (
             <li key={c.id}>
-              {c.title} – Reward: {c.rewardTokens}
+              {c.title} – Reward: {c.rewardTokens}{" "}
               <button onClick={() => handleCompleteChore(c.id)}>Mark Complete</button>
             </li>
           ))}
         </ul>
       </section>
 
-      {/* --- Store --- */}
+      {/* Store Items */}
       <section style={{ marginTop: "30px" }}>
         <h3>Store</h3>
         <ul>
           {storeItems.map((i) => (
             <li key={i.id}>
-              {i.name} – Price: {i.priceTokens}
+              {i.name} – Price: {i.priceTokens}{" "}
               <button onClick={() => handleRedeem(i.id, i.priceTokens)}>Redeem</button>
             </li>
           ))}
         </ul>
       </section>
 
-      {/* --- Transactions --- */}
+      {/* Transactions */}
       <section style={{ marginTop: "30px" }}>
         <h3>Your Transactions</h3>
         <ul>
-          {transactions.map((tx) => (
-            <li key={tx.id}>
-              [{tx.type}] {tx.description} → {tx.amount}
-            </li>
-          ))}
+          {transactions.map((tx) => {
+            const date = tx.createdAt?.toDate ? tx.createdAt.toDate() : new Date(tx.createdAt);
+            const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+            const diffMs = date.getTime() - Date.now();
+            const diffMins = Math.round(diffMs / 60000);
+            let relative = "";
+            if (Math.abs(diffMins) < 60) {
+              relative = rtf.format(diffMins, "minute");
+            } else if (Math.abs(diffMins) < 1440) {
+              relative = rtf.format(Math.round(diffMins / 60), "hour");
+            } else {
+              relative = rtf.format(Math.round(diffMins / 1440), "day");
+            }
+            const isPositive = tx.amount > 0;
+            return (
+              <li key={tx.id}>
+                [{tx.type}] {tx.description} →{" "}
+                <span style={{ color: isPositive ? "green" : "red", fontWeight: "bold" }}>
+                  {isPositive ? `+${tx.amount}` : tx.amount} tokens
+                </span>{" "}
+                <span style={{ color: "#666" }}>{relative}</span>
+              </li>
+            );
+          })}
         </ul>
       </section>
     </div>

@@ -12,6 +12,7 @@ import {
   query,
   where,
   getDocs,
+  getDoc,
   increment,
   runTransaction,
 } from "firebase/firestore";
@@ -298,3 +299,13 @@ export const redeemStoreItem = async (
     return false;
   }
 };
+
+//
+// 👤 Get User Data
+//
+export const getUserData = async (uid: string) => {
+  const ref = doc(db, "users", uid);
+  const snap = await getDoc(ref);
+  return snap.exists() ? snap.data() : null;
+};
+
