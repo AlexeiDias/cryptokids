@@ -79,8 +79,27 @@ export const updateChildTokenMintAddress = async (
 //
 // ✅ Chores
 //
-export const addChore = (familyId: string, chore: any) =>
-  addDoc(collection(db, "chores"), { ...chore, familyId, status: "pending" });
+export interface ChoreInput {
+  title: string;
+  rewardTokens: number;
+  assignedTo: string;
+  frequency?: "once" | "daily" | "weekly";
+  daysOfWeek?: string[];
+}
+
+export const addChore = (familyId: string, chore: ChoreInput) => {
+  const { frequency = "once", daysOfWeek = [], ...rest } = chore;
+
+  return addDoc(collection(db, "chores"), {
+    ...rest,
+    familyId,
+    status: "pending",
+    frequency,
+    daysOfWeek: frequency === "weekly" ? daysOfWeek : [],
+    createdAt: serverTimestamp(),
+  });
+};
+
 
 export const updateChore = (id: string, updates: any) =>
   updateDoc(doc(db, "chores", id), updates);

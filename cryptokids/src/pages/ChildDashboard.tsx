@@ -11,6 +11,9 @@ import {
   addNotification
 } from "../services/firestoreService";
 import { connectPhantom, getSPLTokenBalance } from "../services/phantomService";
+import Calendar from "react-calendar";
+import "react-calendar/dist/Calendar.css";
+import dayjs from "dayjs";
 
 const DEV_MODE = import.meta.env.DEV;
 
@@ -25,7 +28,8 @@ const ChildDashboard: React.FC = () => {
   const [storeItems, setStoreItems] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [phantomBalance, setPhantomBalance] = useState<number | null>(null);
-
+  const [selectedDate, setSelectedDate] = useState(new Date());
+const [completedChoreIds, setCompletedChoreIds] = useState<string[]>([]);
   useEffect(() => {
     if (familyId) {
       return listenToChildren(familyId, setChildren);
@@ -89,6 +93,37 @@ const ChildDashboard: React.FC = () => {
     }
   };
 
+  const visibleChores = chores.filter((chore) => {
+    const choreDay = dayjs(selectedDate).format("dddd");
+  
+    if (chore.frequency === "daily") return true;
+    if (chore.frequency === "weekly") return chore.daysOfWeek?.includes(choreDay);
+    if (chore.frequency === "once") {
+      const created = chore.createdAt?.toDate?.();
+      return created && dayjs(created).isSame(selectedDate, "day");
+    }
+  
+    return false;
+  });
+
+  const handleToggleChore = async (choreId: string, isCompleted: boolean) => {
+    if (isCompleted) {
+      setCompletedChoreIds(prev => prev.filter(id => id !== choreId));
+      // Optionally update Firestore to undo completion
+    } else {
+      setCompletedChoreIds(prev => [...prev, choreId]);
+      
+      // 👇 Existing logic — keep notification to parent
+      await addNotification(familyId, {
+        message: `${user?.name} completed a chore: ${choreId}`,
+        type: "chore_completed",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+  
+  
+
   const currentChild = children.find((c) => c.id === user?.uid);
 
   return (
@@ -132,6 +167,34 @@ const ChildDashboard: React.FC = () => {
           <b>Phantom Balance:</b> {phantomBalance} SPL tokens
         </p>
       )}
+
+<div style={{ marginTop: "2rem" }}>
+  <h3>My Chores</h3>
+  <Calendar onChange={setSelectedDate} value={selectedDate} />
+  
+  <div style={{ marginTop: "1rem" }}>
+    <h4>Chores for {dayjs(selectedDate).format("dddd, MMM D")}</h4>
+    <ul>
+      {visibleChores.map((chore) => {
+        const isCompleted = completedChoreIds.includes(chore.id);
+
+        return (
+          <li key={chore.id}>
+            <label>
+              <input
+                type="checkbox"
+                checked={isCompleted}
+                onChange={() => handleToggleChore(chore.id, isCompleted)}
+              />
+              {chore.title}
+            </label>
+          </li>
+        );
+      })}
+    </ul>
+  </div>
+</div>
+
 
       {/* Chores */}
       <section>

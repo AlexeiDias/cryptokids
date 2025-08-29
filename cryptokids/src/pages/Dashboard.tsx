@@ -18,6 +18,10 @@ import {
   listenToNotifications 
 } from "../services/firestoreService";
 import { useAuth } from "../context/AuthContext";
+import Calendar from "react-calendar";
+import "react-calendar/dist/Calendar.css";
+import dayjs from "dayjs";
+
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -45,6 +49,10 @@ const Dashboard: React.FC = () => {
   const [newItem, setNewItem] = useState({ name: "", priceTokens: 0, description: "" });
   const [transactions, setTransactions] = useState<any[]>([]);
   const [selectedChild, setSelectedChild] = useState("all");
+  const [frequency, setFrequency] = useState<"once" | "daily" | "weekly">("once");
+  const [daysOfWeek, setDaysOfWeek] = useState<string[]>([]);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+
 
   useEffect(() => {
     if (!familyId) return;
@@ -107,9 +115,22 @@ const Dashboard: React.FC = () => {
 
   const handleAddChore = async () => {
     if (!familyId || !newChore.title || !newChore.assignedTo) return;
-    await addChore(familyId, newChore);
+  
+    await addChore(familyId, {
+      title: newChore.title,
+      rewardTokens: newChore.rewardTokens,
+      assignedTo: newChore.assignedTo,
+      frequency,
+      daysOfWeek,
+    });
+  
     setNewChore({ title: "", description: "", rewardTokens: 0, assignedTo: "" });
+    setFrequency("once");
+    setDaysOfWeek([]);
   };
+
+  
+  
 
   const handleDeleteChore = async (choreId: string) => {
     await deleteChore(choreId);
@@ -218,6 +239,35 @@ useEffect(() => {
           value={newChore.rewardTokens}
           onChange={(e) => setNewChore({ ...newChore, rewardTokens: Number(e.target.value) })}
         />
+        <label>Frequency:</label>
+<select value={frequency} onChange={(e) => setFrequency(e.target.value as any)}>
+  <option value="once">One-time</option>
+  <option value="daily">Daily</option>
+  <option value="weekly">Weekly</option>
+</select>
+{frequency === "weekly" && (
+  <div>
+    <label>Repeat on:</label>
+    {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map(day => (
+      <label key={day} style={{ marginRight: "10px" }}>
+        <input
+          type="checkbox"
+          value={day}
+          checked={daysOfWeek.includes(day)}
+          onChange={(e) => {
+            const checked = e.target.checked;
+            setDaysOfWeek(prev =>
+              checked ? [...prev, day] : prev.filter(d => d !== day)
+            );
+          }}
+        />
+        {day}
+      </label>
+    ))}
+  </div>
+)}
+
+
         <select
           value={newChore.assignedTo}
           onChange={(e) => setNewChore({ ...newChore, assignedTo: e.target.value })}
@@ -244,11 +294,49 @@ useEffect(() => {
           })}
         </ul>
       </section>
-      <section style={{ marginTop: "30px" }}>
+
+      <div style={{ marginTop: "2rem" }}>
+  <h3>Chores Schedule</h3>
+  <Calendar onChange={setSelectedDate} value={selectedDate} />
+  
+  <div style={{ marginTop: "1rem" }}>
+    <h4>Chores for {dayjs(selectedDate).format("dddd, MMM D")}</h4>
+    <ul>
+      {chores
+        .filter(chore => {
+          const choreDay = dayjs(selectedDate).format("dddd");
+
+          if (chore.frequency === "daily") return true;
+          if (chore.frequency === "weekly")
+            return chore.daysOfWeek?.includes(choreDay);
+          if (chore.frequency === "once")
+            return dayjs(chore.createdAt?.toDate?.()).isSame(selectedDate, "day");
+
+          return false;
+        })
+        .map((chore) => (
+          <li key={chore.id}>
+            ✅ {chore.title} — Assigned to: {chore.assignedTo}
+          </li>
+        ))}
+    </ul>
+  </div>
+</div>
+
+<section style={{ marginTop: "30px" }}>
   <h3>Notifications</h3>
   <ul>
-    {notifications.map((n) => (
-      <li key={n.id}>{n.message}</li>
+    {notifications.map((n, index) => (
+      <li key={n.id || index}>
+        <div><strong>{n.type ?? "Notice"}:</strong> {String(n.message)}</div>
+        <div style={{ fontSize: "12px", color: "#666" }}>
+          {n.timestamp?.toDate
+            ? new Date(n.timestamp.toDate()).toLocaleString()
+            : n.timestamp
+              ? new Date(n.timestamp).toLocaleString()
+              : "No timestamp"}
+        </div>
+      </li>
     ))}
   </ul>
 </section>
