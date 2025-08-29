@@ -15,10 +15,12 @@ import {
   getDoc,
   increment,
   runTransaction,
+  orderBy
 } from "firebase/firestore";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { getAssociatedTokenAddress } from "@solana/spl-token";
+import { serverTimestamp } from "firebase/firestore";
 
 import { Chore } from "../utils/types";
 
@@ -309,3 +311,22 @@ export const getUserData = async (uid: string) => {
   return snap.exists() ? snap.data() : null;
 };
 
+export const addNotification = async (familyId: string, message: string) => {
+  const notificationsRef = collection(db, "families", familyId, "notifications");
+  await addDoc(notificationsRef, {
+    message,
+    createdAt: serverTimestamp(),
+  });
+};
+
+export const listenToNotifications = (
+  familyId: string,
+  callback: (data: any[]) => void
+) => {
+  const notificationsRef = collection(db, "families", familyId, "notifications");
+  const q = query(notificationsRef, orderBy("createdAt", "desc"));
+  return onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    callback(data);
+  });
+};

@@ -14,7 +14,8 @@ import {
   deleteStoreItem,
   addFine,
   deleteFine,
-  applyFineToChild
+  applyFineToChild,
+  listenToNotifications 
 } from "../services/firestoreService";
 import { useAuth } from "../context/AuthContext";
 
@@ -139,6 +140,15 @@ const Dashboard: React.FC = () => {
     alert(`Fine of ${amount} applied to ${childId}`);
   };
 
+  const [notifications, setNotifications] = useState<any[]>([]);
+
+useEffect(() => {
+  if (!familyId) return;
+  const unsub = listenToNotifications(familyId, setNotifications);
+  return () => unsub();
+}, [familyId]);
+
+
   return (
     <div style={{ padding: "20px" }}>
       <h2>Parent Dashboard</h2>
@@ -234,6 +244,15 @@ const Dashboard: React.FC = () => {
           })}
         </ul>
       </section>
+      <section style={{ marginTop: "30px" }}>
+  <h3>Notifications</h3>
+  <ul>
+    {notifications.map((n) => (
+      <li key={n.id}>{n.message}</li>
+    ))}
+  </ul>
+</section>
+
 
       {/* Store Items */}
       <section style={{ marginTop: "30px" }}>

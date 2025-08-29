@@ -7,7 +7,8 @@ import {
   listenToStoreItems,
   redeemStoreItem,
   listenToTransactions,
-  listenToChildren
+  listenToChildren,
+  addNotification
 } from "../services/firestoreService";
 import { connectPhantom, getSPLTokenBalance } from "../services/phantomService";
 
@@ -49,9 +50,20 @@ const ChildDashboard: React.FC = () => {
     }
   }, [familyId, userId]);
 
-  const handleCompleteChore = async (choreId: string) => {
-    await updateChore(choreId, { status: "completed" });
+  const handleCompleteChore = async (chore: any) => {
+    await updateChore(chore.id, { status: "completed" });
+  
+    const now = new Date();
+    const timeString = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  
+    if (currentChild?.name && familyId) {
+      await addNotification(
+        familyId,
+        `${currentChild.name} completed "${chore.title}" at ${timeString}`
+      );
+    }
   };
+  
 
   const handleRedeem = async (itemId: string, price: number) => {
     if (!userId) return;
@@ -127,9 +139,9 @@ const ChildDashboard: React.FC = () => {
         <ul>
           {chores.map((c) => (
             <li key={c.id}>
-              {c.title} – Reward: {c.rewardTokens}{" "}
-              <button onClick={() => handleCompleteChore(c.id)}>Mark Complete</button>
-            </li>
+            {c.title} – Reward: {c.rewardTokens}
+            <button onClick={() => handleCompleteChore(c)}>Mark Complete</button>
+          </li>
           ))}
         </ul>
       </section>
